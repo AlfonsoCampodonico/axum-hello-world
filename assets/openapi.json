@@ -1,0 +1,225 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "axum-hello-world",
+    "version": "0.1.0",
+    "summary": "A hello-world HTTP API in Rust, deployed on Laravel Cloud.",
+    "description": "A small axum service showing what a Rust web app needs to run on Laravel Cloud: bind the IPv6 wildcard so the dual-stack health probe succeeds, honour the injected `PORT`, and shut down cleanly on `SIGTERM`.",
+    "license": { "name": "MIT", "identifier": "MIT" }
+  },
+  "servers": [
+    { "url": "/", "description": "This deployment" }
+  ],
+  "tags": [
+    { "name": "greeting", "description": "Hello, world." },
+    { "name": "meta", "description": "Health and build information." },
+    { "name": "demo", "description": "Endpoints that exercise request handling." }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["greeting"],
+        "operationId": "hello",
+        "summary": "Greet the world",
+        "responses": {
+          "200": {
+            "description": "A greeting.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Greeting" },
+                "example": { "message": "Hello, World!" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hello": {
+      "get": {
+        "tags": ["greeting"],
+        "operationId": "helloAlias",
+        "summary": "Greet the world (alias for /)",
+        "responses": {
+          "200": {
+            "description": "A greeting.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Greeting" },
+                "example": { "message": "Hello, World!" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hello/{name}": {
+      "get": {
+        "tags": ["greeting"],
+        "operationId": "helloName",
+        "summary": "Greet someone by name",
+        "description": "Surrounding whitespace is trimmed. A blank or overlong name is rejected.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Who to greet.",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "example": "Ferris"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A greeting.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Greeting" },
+                "example": { "message": "Hello, Ferris!" }
+              }
+            }
+          },
+          "400": {
+            "description": "The name was blank or longer than 64 characters.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": { "status": 400, "message": "name must not be blank" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["meta"],
+        "operationId": "health",
+        "summary": "Liveness probe",
+        "description": "The endpoint Laravel Cloud's health check hits. It arrives over IPv6.",
+        "responses": {
+          "200": {
+            "description": "The service is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": { "status": { "const": "ok" } }
+                },
+                "example": { "status": "ok" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": ["meta"],
+        "operationId": "version",
+        "summary": "Build information",
+        "responses": {
+          "200": {
+            "description": "Crate and framework versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["name", "version", "framework"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "framework": { "type": "string" }
+                  }
+                },
+                "example": {
+                  "name": "axum-hello-world",
+                  "version": "0.1.0",
+                  "framework": "axum 0.8"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/echo": {
+      "post": {
+        "tags": ["demo"],
+        "operationId": "echo",
+        "summary": "Echo a JSON body",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "description": "Any JSON value." },
+              "example": { "hello": ["world", 42] }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The body you sent, wrapped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["echo"],
+                  "properties": { "echo": { "description": "Any JSON value." } }
+                },
+                "example": { "echo": { "hello": ["world", 42] } }
+              }
+            }
+          },
+          "400": {
+            "description": "The body was not valid JSON.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "415": {
+            "description": "The Content-Type was not application/json.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": {
+                  "error": {
+                    "status": 415,
+                    "message": "Expected request with `Content-Type: application/json`"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Greeting": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "examples": ["Hello, World!"] }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["status", "message"],
+            "properties": {
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

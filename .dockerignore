@@ -1,0 +1,8 @@
+target/
+.git/
+.github/
+.remember/
+.superpowers/
+Makefile
+README.md
+tests/

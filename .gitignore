@@ -1,0 +1,6 @@
+/target
+
+# Local scratch
+.DS_Store
+.remember/
+.superpowers/
