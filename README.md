@@ -130,13 +130,19 @@ This app has no migrations and no release-time work, so it stays empty.
 
 1. Create an application pointing at this repository and branch.
 2. Set the build and start commands above.
-3. Leave `PORT` alone — Cloud injects it and the app binds it automatically.
-   Nothing else needs configuring; the app reads no other environment variable.
+3. Leave `PORT` alone. Cloud bakes it into the image and points its in-pod
+   nginx at that port. Unlike Rocket, axum takes the address in the app's own
+   `main`, so reading `$PORT` is the app's job — `main.rs` does it. Nothing
+   else needs configuring; the app reads no other environment variable.
 4. Deploy, then open `/docs` on the assigned domain and `/health` to confirm
    the probe target.
 
-`--locked` makes the platform build the exact dependency versions in
-`Cargo.lock` and fail loudly rather than silently resolving something newer.
+The platform's own default build command is `cargo build --release`; the
+`--locked` here is a deliberate addition, so the build uses the exact
+dependency versions in `Cargo.lock` and fails loudly rather than quietly
+resolving something newer. The start command is the one the runtime derives
+from the binary target in `Cargo.toml`.
+
 `rust-toolchain.toml` declares the toolchain so CI and the platform build with
 the same compiler rather than each picking a default.
 
