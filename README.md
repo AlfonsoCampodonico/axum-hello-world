@@ -1,6 +1,7 @@
 # axum-hello-world
 
-A hello-world HTTP API in **Rust**, built to deploy on **Laravel Cloud**.
+A hello-world HTTP API in **Rust**, built to deploy on **Laravel Cloud** using
+the native Rust runtime.
 
 It is deliberately small — a greeting, a health check, an echo — because the
 interesting part is not the app. It is what a Rust web service has to get right
@@ -10,12 +11,12 @@ to run on the platform, which this repo documents and enforces in code:
   IPv6 while the in-pod proxy forwards over IPv4 loopback, so the listener has
   to serve both. See [The dual-stack gotcha](#the-dual-stack-gotcha).
 - **Honour the injected `PORT`**, falling back to `9115` locally.
-- **Shut down on `SIGTERM`**, so in-flight requests finish when a container is
+- **Shut down on `SIGTERM`**, so in-flight requests finish when an instance is
   replaced.
 
-Four direct dependencies (`axum`, `tokio`, `serde`, `serde_json`), a
-1 MB static binary, an 8 MB image, and the OpenAPI spec compiled into the
-executable so there are no files to ship beside it.
+Four direct dependencies (`axum`, `tokio`, `serde`, `serde_json`), a 1 MB
+release binary that builds cold in about 15 seconds, and the OpenAPI spec
+compiled into the executable so there are no files to ship beside it.
 
 ## Endpoints
 
@@ -58,15 +59,22 @@ curl -s -X POST localhost:9115/echo \
 # {"echo":{"hello":["world",42]}}
 ```
 
+To reproduce what the platform does, rather than what a dev loop does:
+
+```bash
+make build               # cargo build --release --locked
+make serve               # PORT=9115 target/release/axum-hello-world
+```
+
 ## The dual-stack gotcha
 
 This is the platform lesson the repo exists to record, and it bites every
 runtime in this demo suite differently.
 
-Laravel Cloud health-checks your container over **IPv6**, while the proxy in
-front of your app forwards requests over **IPv4 loopback**. A listener bound to
-`0.0.0.0` is IPv4-only: it serves traffic fine and then fails the health check,
-so the deploy never goes green.
+Laravel Cloud health-checks your app over **IPv6**, while the proxy in front of
+it forwards requests over **IPv4 loopback**. A listener bound to `0.0.0.0` is
+IPv4-only: it serves traffic fine and then fails the health check, so the
+deploy never goes green.
 
 In Rust the fix is to bind the IPv6 wildcard and let the kernel accept IPv4
 through v4-mapped addresses:
@@ -96,42 +104,56 @@ whereas for `uvicorn` `--host ::` is IPv6-**only** and you need `--host ''`, and
 in Node you pass no host at all. `main.rs` also falls back to IPv4 if the IPv6
 bind fails outright, for hosts built without IPv6 support.
 
+CI asserts this: the `release` job boots the release binary and health-checks
+it over IPv4 loopback, which only answers because the socket is dual-stack.
+
 ## Deploy to Laravel Cloud
 
-Laravel Cloud has no native Rust runtime, so the app deploys as a Docker image.
+The app builds and runs directly on Cloud's Rust runtime — there is no
+Dockerfile, and nothing in the repo describes the platform. `Cargo.toml` at the
+repository root is what marks this as a Rust application; the commands below
+are what the environment runs.
 
-1. Push this repo to GitHub and create a new application in Laravel Cloud
-   pointing at your repository and branch.
-2. Choose the **Dockerfile** build strategy. No language runtime configuration
-   is needed — the included `Dockerfile` produces a static musl binary on
-   `distroless/static`, which contains no shell, no package manager, and runs
-   as `nonroot`.
-3. Cloud injects `PORT` for the web process and the app binds it automatically.
-   Confirm the environment's exposed port matches.
-4. Deploy, then open `/docs` on your assigned domain.
+| Setting | Value |
+|---------|-------|
+| Build command | `cargo build --release --locked` |
+| Start command | `./target/release/axum-hello-world` |
+| Deploy command | *(leave empty)* |
 
-## Build the container
+Cloud keeps these three separate, and the distinction matters. The **build
+command** compiles. The **start command** is the long-running process that
+serves HTTP — the one Rust needs set explicitly, exactly as Go, Python and
+JavaScript applications do. The **deploy command** is a one-shot hook that runs
+just before a release goes live, for work like database migrations; its
+filesystem changes are not persisted, so nothing about building belongs there.
+This app has no migrations and no release-time work, so it stays empty.
 
-```bash
-make docker              # docker build --platform linux/amd64 -t axum-hello-world:dev .
-make docker-run          # PORT=9115, published on the same port
-```
+1. Create an application pointing at this repository and branch.
+2. Set the build and start commands above.
+3. Leave `PORT` alone — Cloud injects it and the app binds it automatically.
+   Nothing else needs configuring; the app reads no other environment variable.
+4. Deploy, then open `/docs` on the assigned domain and `/health` to confirm
+   the probe target.
 
-The build is two-staged and dependency-cached: the first stage compiles the
-dependency tree against a stub `main.rs`, so editing `src/` rebuilds only this
-crate. Cloud runs amd64, so `make docker` pins `linux/amd64` — on Apple Silicon
-the resulting image runs under emulation locally, which is fine for a smoke
-test.
+`--locked` makes the platform build the exact dependency versions in
+`Cargo.lock` and fail loudly rather than silently resolving something newer.
+`rust-toolchain.toml` declares the toolchain so CI and the platform build with
+the same compiler rather than each picking a default.
+
+The release profile in `Cargo.toml` trades build time for size and speed —
+fat LTO, one codegen unit, symbols stripped. That is worth it here because a
+cold build of this dependency tree still finishes in about 15 seconds.
 
 ## Layout
 
 ```
-src/main.rs        bind the listener, serve, shut down gracefully
-src/lib.rs         the router — separate from main so tests can drive it
-src/routes.rs      handlers
-src/error.rs       the single error shape
-assets/            openapi.json and the docs page, compiled into the binary
-tests/api.rs       integration tests over the router, no socket bound
+src/main.rs           bind the listener, serve, shut down gracefully
+src/lib.rs            the router — separate from main so tests can drive it
+src/routes.rs         handlers
+src/error.rs          the single error shape
+assets/               openapi.json and the docs page, compiled into the binary
+tests/api.rs          integration tests over the router, no socket bound
+rust-toolchain.toml   the compiler version CI and Cloud both build with
 ```
 
 Tests drive the router in-process with `tower::ServiceExt::oneshot`, so the

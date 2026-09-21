@@ -1,0 +1,12 @@
+# Declares the toolchain so CI and the Laravel Cloud builder agree on one
+# compiler instead of each picking their own default. `edition = "2024"` in
+# Cargo.toml needs 1.85 or newer, which any current stable satisfies.
+#
+# This tracks the channel rather than pinning an exact version: the runtime is
+# new and it is not yet confirmed whether its builder can fetch an arbitrary
+# toolchain on demand, and a demo repo failing to deploy over a pin it did not
+# need is the worse trade. Pin a version here once that is known.
+[toolchain]
+channel = "stable"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

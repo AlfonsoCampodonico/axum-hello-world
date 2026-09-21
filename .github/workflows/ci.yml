@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install the Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+        run: rustup show active-toolchain || rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 
@@ -20,8 +20,25 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
 
-  docker:
+  # Runs exactly what Laravel Cloud runs on deploy, so a broken release build
+  # fails here rather than on the platform.
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: docker build -t axum-hello-world:ci .
+
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release --locked
+
+      - name: Boot the binary and check the health endpoint
+        run: |
+          PORT=9115 ./target/release/axum-hello-world &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9115/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:9115/health | tee /dev/stderr | grep -q '"ok"'

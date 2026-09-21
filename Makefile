@@ -1,7 +1,7 @@
-IMAGE ?= axum-hello-world:dev
-PORT  ?= 9115
+PORT ?= 9115
+BIN  ?= target/release/axum-hello-world
 
-.PHONY: run test fmt lint check docker docker-run
+.PHONY: run test fmt lint check build serve
 
 run:
 	cargo run
@@ -21,9 +21,10 @@ check:
 	cargo clippy --all-targets -- -D warnings
 	cargo test
 
-# Laravel Cloud runs amd64; pin the platform so a local arm64 build matches.
-docker:
-	docker build --platform linux/amd64 -t $(IMAGE) .
+# `build` and `serve` mirror the build and deploy commands configured on the
+# Laravel Cloud environment, so the platform build can be reproduced locally.
+build:
+	cargo build --release --locked
 
-docker-run:
-	docker run --rm -e PORT=$(PORT) -p $(PORT):$(PORT) $(IMAGE)
+serve: build
+	PORT=$(PORT) $(BIN)
